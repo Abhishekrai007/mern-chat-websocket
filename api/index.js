@@ -4,10 +4,10 @@ const mongoose = require("mongoose");
 const User = require("./models/Users");
 const jwt = require("jsonwebtoken");
 const cors = require("cors");
-
+const cookieParser = require("cookie-parser")
 const app = express();
 app.use(express.json())
-
+app.use(cookieParser())
 
 dotenv.config();
 mongoose.connect(process.env.MONGO_URL)
@@ -15,17 +15,31 @@ const jwtSecet = process.env.JWT_SECRET;
 
 app.use(cors({ credentials: true, origin: process.env.CLIENT_URL }))
 
+
+
 app.get("/", (req, res) => {
     res.json("ok")
+})
+
+app.get("/profile", (req, res) => {
+    const token = req.cookies?.token;
+    if (token) {
+        jwt.verify(token, jwtSecet, {}, (err, userData) => {
+            if (err) throw err;
+            res.json(userData)
+        })
+    } else {
+        res.status(401).json("no token")
+    }
 })
 
 app.post("/register", async (req, res) => {
     const { username, password } = req.body;
     try {
         const createdUser = await User.create({ username, password });
-        jwt.sign({ userId: createdUser._id }, jwtSecet, {}, (err, token) => {
+        jwt.sign({ userId: createdUser._id, username }, jwtSecet, {}, (err, token) => {
             if (err) throw err;
-            res.cookie("token", token).status(201).json({ id: createdUser._id })
+            res.cookie("token", token, { sameSite: "none", secure: true }).status(201).json({ id: createdUser._id, username })
         })
     } catch (error) {
         if (error) throw error;
