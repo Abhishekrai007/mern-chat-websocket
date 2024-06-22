@@ -7,6 +7,7 @@ const cors = require("cors");
 const cookieParser = require("cookie-parser")
 const app = express();
 const bcrypt = require("bcryptjs")
+const ws = require("ws")
 app.use(express.json())
 app.use(cookieParser())
 
@@ -66,7 +67,46 @@ app.post("/register", async (req, res) => {
 
 })
 
-app.listen(3000)
+const server = app.listen(3000);
+
+const wss = new ws.WebSocketServer({ server });
+wss.on("connection", (connection, req) => {
+    const cookies = req.headers.cookie;
+    if (cookies) {
+        const tokenCookieString = cookies.split(";").find(str => str.startsWith("token="))
+        if (tokenCookieString) {
+            const token = tokenCookieString.split("=")[1];
+            if (token) {
+                jwt.verify(token, jwtSecet, {}, (err, userData) => {
+                    if (err) throw err;
+                    const { userId, username } = userData;
+                    connection.userId = userId;
+                    connection.username = username;
+
+                })
+            }
+        }
+    }
+
+    [...wss.clients].forEach((client) => {
+        client.send(JSON.stringify(
+            {
+                online: [...wss.clients].map(c => ({ userId: c.userId, username: c.username }))
+            }
+        ))
+    })
+
+    connection.on("message", (message) => {
+        const messageData = JSON.parse(message.toString());
+        const { recipient, text } = messageData;
+        if (recipient && text) {
+            [...wss.clients].filter(c => c.userId === recipient)
+                .forEach(c => c.send(JSON.stringify({ text, sender: connection.userId })))
+        }
+    })
+
+
+})
 
 
 // mongodb+srv://abhishekrai1574:test@cluster0.zurl8ll.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0

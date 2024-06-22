@@ -2,16 +2,13 @@ import { useContext } from "react";
 
 import { UserContext } from "./UserContext";
 import RegisterAndLogin from "./RegisterAndLogin";
+import Chat from "./Chat";
 
 const Routes = () => {
   const { username, id } = useContext(UserContext);
 
   if (username) {
-    return (
-      <div>
-        Logged In <h1>{username}</h1>
-      </div>
-    );
+    return <Chat />;
   }
   console.log(username);
   return <RegisterAndLogin />;
