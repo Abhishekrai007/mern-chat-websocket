@@ -9,8 +9,12 @@ const app = express();
 const bcrypt = require("bcryptjs")
 const ws = require("ws");
 const Message = require("./models/Message")
+const fs = require('fs');
 app.use(express.json())
 app.use(cookieParser())
+
+
+app.use('/uploads', express.static(__dirname + '/uploads'));
 
 dotenv.config();
 mongoose.connect(process.env.MONGO_URL)
@@ -80,6 +84,12 @@ app.post("/login", async (req, res) => {
         }
     }
 })
+
+app.post("/logout", (req, res) => {
+    res.cookie("token", "", { sameSite: "none", secure: true }).json("ok")
+})
+
+
 app.post("/register", async (req, res) => {
     const { username, password } = req.body;
     try {
@@ -103,6 +113,35 @@ const server = app.listen(3000);
 
 const wss = new ws.WebSocketServer({ server });
 wss.on("connection", (connection, req) => {
+
+
+    const notifyAboutOnlinePeople = () => {
+        [...wss.clients].forEach((client) => {
+            client.send(JSON.stringify(
+                {
+                    online: [...wss.clients].map(c => ({ userId: c.userId, username: c.username }))
+                }
+            ))
+        })
+    }
+
+    connection.isAlive = true;
+
+    connection.timer = setInterval(() => {
+        connection.ping();
+        connection.deathTimer = setTimeout(() => {
+            connection.isAlive = false;
+            clearInterval(connection.timer)
+            connection.terminate()
+            notifyAboutOnlinePeople()
+            console.log("dead")
+        }, 1000)
+    }, 5000)
+
+    connection.on("pong", () => {
+        clearTimeout(connection.deathTimer)
+    })
+
     const cookies = req.headers.cookie;
     if (cookies) {
         const tokenCookieString = cookies.split(";").find(str => str.startsWith("token="))
@@ -120,29 +159,44 @@ wss.on("connection", (connection, req) => {
         }
     }
 
-    [...wss.clients].forEach((client) => {
-        client.send(JSON.stringify(
-            {
-                online: [...wss.clients].map(c => ({ userId: c.userId, username: c.username }))
-            }
-        ))
-    })
 
-    connection.on("message", async (message) => {
 
+    connection.on('message', async (message) => {
         const messageData = JSON.parse(message.toString());
-        const { recipient, text } = messageData;
-        if (recipient && text) {
+        const { recipient, text, file } = messageData;
+        let filename = null;
+        if (file) {
+            console.log('size', file.data.length);
+            const parts = file.name.split('.');
+            const ext = parts[parts.length - 1];
+            filename = Date.now() + '.' + ext;
+            const path = __dirname + '/uploads/' + filename;
+            const bufferData = new Buffer(file.data.split(',')[1], 'base64');
+            fs.writeFile(path, bufferData, () => {
+                console.log('file saved:' + path);
+            });
+        }
+        if (recipient && (text || file)) {
             const messageDoc = await Message.create({
                 sender: connection.userId,
                 recipient,
-                text
-            })
+                text,
+                file: file ? filename : null,
+            });
             console.log('created message');
-            [...wss.clients].filter(c => c.userId === recipient)
-                .forEach(c => c.send(JSON.stringify({ text, sender: connection.userId, recipient, _id: messageDoc._id })))
+            [...wss.clients]
+                .filter(c => c.userId === recipient)
+                .forEach(c => c.send(JSON.stringify({
+                    text,
+                    sender: connection.userId,
+                    recipient,
+                    file: file ? filename : null,
+                    _id: messageDoc._id,
+                })));
         }
-    })
+    });
+
+    notifyAboutOnlinePeople();
 
 
 })
