@@ -10,6 +10,7 @@ const bcrypt = require("bcryptjs")
 const ws = require("ws");
 const Message = require("./models/Message")
 const fs = require('fs');
+const { check, validationResult } = require('express-validator');
 app.use(express.json())
 app.use(cookieParser())
 
@@ -17,10 +18,15 @@ app.use(cookieParser())
 app.use('/uploads', express.static(__dirname + '/uploads'));
 
 dotenv.config();
-mongoose.connect(process.env.MONGO_URL)
+try {
+    mongoose.connect(process.env.MONGO_URL);
+    console.log('Connected to MongoDB');
+} catch (error) {
+    console.error('MongoDB connection error:', error);
+}
 const jwtSecet = process.env.JWT_SECRET;
 const bcryptSalt = bcrypt.genSaltSync(10)
-app.use(cors({ credentials: true, origin: process.env.CLIENT_URL }))
+app.use(cors({ credentials: true, origin: [process.env.CLIENT_URL, 'https://your-frontend-vercel-url.vercel.app'] }))
 
 const getUserDataFromRequest = async (req) => {
     return new Promise((resolve, reject) => {
@@ -70,6 +76,11 @@ app.get("/people", async (req, res) => {
     res.json(users)
 })
 
+const validateUser = [
+    check('username').notEmpty().withMessage('Username is required'),
+    check('password').isLength({ min: 3 }).withMessage('Password must be at least 3 characters long')
+];
+
 app.post("/login", async (req, res) => {
     const { username, password } = req.body;
     const foundUser = await User.findOne({ username });
@@ -85,9 +96,13 @@ app.post("/login", async (req, res) => {
     }
 })
 
+
+
 app.post("/logout", (req, res) => {
     res.cookie("token", "", { sameSite: "none", secure: true }).json("ok")
 })
+
+
 
 
 app.post("/register", async (req, res) => {
@@ -109,7 +124,13 @@ app.post("/register", async (req, res) => {
 
 })
 
-const server = app.listen(3000);
+// ================================
+const port = process.env.PORT || 3000;
+const server = app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
+});
+// =================================
+// const server = app.listen(3000);
 
 const wss = new ws.WebSocketServer({ server });
 wss.on("connection", (connection, req) => {
@@ -182,6 +203,7 @@ wss.on("connection", (connection, req) => {
                 recipient,
                 text,
                 file: file ? filename : null,
+                createdAt: new Date()
             });
             console.log('created message');
             [...wss.clients]
@@ -192,6 +214,7 @@ wss.on("connection", (connection, req) => {
                     recipient,
                     file: file ? filename : null,
                     _id: messageDoc._id,
+                    createdAt: messageDoc.createdAt
                 })));
         }
     });
@@ -201,5 +224,9 @@ wss.on("connection", (connection, req) => {
 
 })
 
+app.use((err, req, res, next) => {
+    console.error(err.stack);
+    res.status(500).send('Something broke!');
+});
 
 // mongodb+srv://abhishekrai1574:test@cluster0.zurl8ll.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0

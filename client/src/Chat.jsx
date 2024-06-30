@@ -3,7 +3,7 @@ import Logo from "./Logo";
 import Avatar from "./Avatar";
 import { UserContext } from "./UserContext";
 import Contact from "./Contact";
-import { uniqBy } from "lodash";
+import { now, uniqBy } from "lodash";
 import axios from "axios";
 
 const Chat = () => {
@@ -13,6 +13,7 @@ const Chat = () => {
   const [newMessageText, setNewMessageText] = useState("");
   const [messages, setMessages] = useState([]);
   const [offlinePeople, setOfflinePeople] = useState({});
+  const [unreadMessages, setUnreadMessages] = useState({});
   const divUnderMessages = useRef();
   const { username, id, setId, setUsername } = useContext(UserContext);
 
@@ -39,14 +40,40 @@ const Chat = () => {
     setOnlinePeople(people);
   };
 
+  // function handleMessage(ev) {
+  //   const messageData = JSON.parse(ev.data);
+  //   console.log({ ev, messageData });
+  //   if ("online" in messageData) {
+  //     showOnlinePeople(messageData.online);
+  //   } else if ("text" in messageData) {
+  //     if (messageData.sender === selectedUserId) {
+  //       setMessages((prev) => [...prev, { ...messageData }]);
+  //     }
+  //   }
+  // }
+
   function handleMessage(ev) {
     const messageData = JSON.parse(ev.data);
     console.log({ ev, messageData });
     if ("online" in messageData) {
       showOnlinePeople(messageData.online);
     } else if ("text" in messageData) {
-      if (messageData.sender === selectedUserId) {
-        setMessages((prev) => [...prev, { ...messageData }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          ...messageData,
+          createdAt: messageData.createdAt || new Date().toISOString(),
+        },
+      ]);
+
+      // If the message is not from the currently selected user, update the UI to show a new message indicator
+      if (messageData.sender !== selectedUserId) {
+        // You can implement a notification system here
+        // For example, updating a state variable to show an unread message count
+        setUnreadMessages((prev) => ({
+          ...prev,
+          [messageData.sender]: (prev[messageData.sender] || 0) + 1,
+        }));
       }
     }
   }
@@ -66,6 +93,7 @@ const Chat = () => {
         recipient: selectedUserId,
         text: newMessageText,
         file,
+        createdAt: Date.now(),
       })
     );
     if (file) {
@@ -81,6 +109,7 @@ const Chat = () => {
           sender: id,
           recipient: selectedUserId,
           _id: Date.now(),
+          createdAt: Date.now(),
         },
       ]);
     }
@@ -104,10 +133,24 @@ const Chat = () => {
     }
   }, [messages]);
 
+  // useEffect(() => {
+  //   if (selectedUserId) {
+  //     axios.get("/messages/" + selectedUserId).then((res) => {
+  //       setMessages(res.data);
+  //     });
+  //   }
+  // }, [selectedUserId]);
+
   useEffect(() => {
     if (selectedUserId) {
       axios.get("/messages/" + selectedUserId).then((res) => {
         setMessages(res.data);
+
+        // Clear unread messages for the selected user
+        setUnreadMessages((prev) => ({
+          ...prev,
+          [selectedUserId]: 0,
+        }));
       });
     }
   }, [selectedUserId]);
@@ -131,6 +174,29 @@ const Chat = () => {
 
   const messagesWithoutDupes = uniqBy(messages, "_id");
 
+  const formatDate = (date) => {
+    if (!date) return "Unknown Date";
+    const d = new Date(date);
+    return isNaN(d.getTime()) ? "Invalid Date" : d.toLocaleDateString();
+  };
+
+  const formatTime = (date) => {
+    if (!date) return "";
+    const d = new Date(date);
+    return isNaN(d.getTime())
+      ? ""
+      : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  };
+
+  const groupedMessages = messagesWithoutDupes.reduce((groups, message) => {
+    const date = formatDate(message.createdAt);
+    if (!groups[date]) {
+      groups[date] = [];
+    }
+    groups[date].push(message);
+    return groups;
+  }, {});
+
   return (
     <div className="flex h-screen">
       <div className="bg-white w-1/3 flex flex-col">
@@ -146,6 +212,7 @@ const Chat = () => {
                 setSelectedUserId(userId);
               }}
               selected={userId === selectedUserId}
+              unreadCount={unreadMessages[userId] || 0}
             />
           ))}
           {Object.keys(offlinePeople).map((userId) => (
@@ -192,7 +259,7 @@ const Chat = () => {
               </div>
             </div>
           )}
-          {!!selectedUserId && (
+          {/* {!!selectedUserId && (
             <div className="relative h-full">
               <div className="overflow-y-scroll absolute top-0 left-0 right-0 bottom-2">
                 {messagesWithoutDupes.map((message) => (
@@ -239,6 +306,70 @@ const Chat = () => {
                         </div>
                       )}
                     </div>
+                  </div>
+                ))}
+                <div ref={divUnderMessages}></div>
+              </div>
+            </div>
+          )} */}
+
+          {!!selectedUserId && (
+            <div className="relative h-full">
+              <div className="overflow-y-scroll absolute top-0 left-0 right-0 bottom-2">
+                {Object.entries(groupedMessages).map(([date, messages]) => (
+                  <div key={date}>
+                    <div className="text-center text-gray-500 my-2">{date}</div>
+                    {messages.map((message) => (
+                      <div
+                        key={message._id}
+                        className={
+                          message.sender === id ? "text-right" : "text-left"
+                        }
+                      >
+                        <div
+                          className={
+                            "text-left inline-block p-2 my-2 rounded-md text-sm " +
+                            (message.sender === id
+                              ? "bg-blue-500 text-white"
+                              : "bg-white text-gray-500")
+                          }
+                        >
+                          <div>{message.text}</div>
+                          {message.file && (
+                            <div className="flex items-center gap-1 border-t pt-2 mt-2">
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                viewBox="0 0 24 24"
+                                fill="currentColor"
+                                className="w-4 h-4"
+                              >
+                                <path
+                                  fillRule="evenodd"
+                                  d="M18.97 3.659a2.25 2.25 0 00-3.182 0l-10.94 10.94a3.75 3.75 0 105.304 5.303l7.693-7.693a.75.75 0 011.06 1.06l-7.693 7.693a5.25 5.25 0 11-7.424-7.424l10.939-10.94a3.75 3.75 0 115.303 5.304L9.097 18.835l-.008.008-.007.007-.002.002-.003.002A2.25 2.25 0 015.91 15.66l7.81-7.81a.75.75 0 011.061 1.06l-7.81 7.81a.75.75 0 001.054 1.068L18.97 6.84a2.25 2.25 0 000-3.182z"
+                                  clipRule="evenodd"
+                                />
+                              </svg>
+                              <a
+                                target="_blank"
+                                className="underline"
+                                href={
+                                  axios.defaults.baseURL +
+                                  "/uploads/" +
+                                  message.file
+                                }
+                              >
+                                {message.file}
+                              </a>
+                            </div>
+                          )}
+                          <div className="text-gray-500 text-xs mt-1">
+                            {message.createdAt
+                              ? formatTime(message.createdAt)
+                              : "No time"}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 ))}
                 <div ref={divUnderMessages}></div>
