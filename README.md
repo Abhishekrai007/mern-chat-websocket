@@ -4,7 +4,7 @@
 This is a chat application built with the MERN stack and WebSockets.
 
 ## Video Demonstration
-[![Watch the video](https://img.youtube.com/vi/YOUR_VIDEO_ID/maxresdefault.jpg)](https://youtu.be/YOUR_VIDEO_ID)
+![Chat Application Demo](Vite + React - 9 July 2024.mp4)
 
 Click the image above to watch the video demonstration of the project.
 
